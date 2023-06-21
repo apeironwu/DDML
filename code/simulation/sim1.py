@@ -4,7 +4,7 @@ import numpy as np
 # np.random.seed(128)
 
 ## parameter setting
-n = 50
+n = 500
 K = 3
 
 p_gamma = 3
@@ -13,20 +13,20 @@ beta = 2
 mat_gamma = np.random.randn(K, p_gamma) * 4
 mat_mu = np.random.randn(K, p_gamma) * 4
 
-psi_u = 10
-psi_v = 4
+psi_u = 16
+psi_v = 9
 
 psi_u_inv = 1 / psi_u
 
 
 ## data generation 
 
-#### correlated X
-covmat_X = np.fromfunction(lambda i, j: np.power(-0.7, np.abs(i - j)), (p_gamma, p_gamma))
-arr_X = np.random.multivariate_normal(np.zeros(p_gamma), covmat_X, K * n).reshape(K, n, p_gamma)
+# #### correlated X
+# covmat_X = np.fromfunction(lambda i, j: np.power(-0.7, np.abs(i - j)), (p_gamma, p_gamma))
+# arr_X = np.random.multivariate_normal(np.zeros(p_gamma), covmat_X, K * n).reshape(K, n, p_gamma)
 
-# #### uncorrelated X
-# arr_X = np.random.randn(K, n, p_gamma)
+#### uncorrelated X
+arr_X = np.random.randn(K, n, p_gamma)
 
 mat_U = np.random.randn(n, K) * np.sqrt(psi_u)
 mat_V = np.random.randn(n, K) * np.sqrt(psi_v)
@@ -63,8 +63,6 @@ print( (mat_gamma_est - mat_gamma) / np.abs(mat_gamma_est) )
 print( (mat_mu_est - mat_mu) / np.abs(mat_mu_est) )
 
 
-## operations in central site
-vec_beta_est_cen = np.zeros(K)
 
 ## statistics from other sites
 vec_s_cur = np.zeros(n)
@@ -76,6 +74,24 @@ for j in range(K):
     vec_S_est[j] = np.mean(vec_s_cur)
 
 S = np.mean(vec_S_est)
+
+## oracle statistics from other sites
+vec_s_ora_cur = np.zeros(n)
+vec_S_ora_est = np.zeros(K)
+
+for j in range(K):
+    vec_s_ora_cur = (mat_D[:, j] - arr_X[j] @ mat_mu[j]) \
+        * (mat_Y[:, j] - mat_D[:, j] * beta - arr_X[j] @ mat_gamma[j])
+    vec_S_ora_est[j] = np.mean(vec_s_ora_cur)
+
+S_ora = np.mean(vec_S_ora_est)
+
+
+
+## operations in central site
+vec_beta_est_cen = np.zeros(K)
+
+vec_beta_ora_est_cen = np.zeros(K)
 
 for j_cen in range(K): 
     vec_Y_cen = np.zeros(n)
@@ -110,19 +126,21 @@ for j_cen in range(K):
 
     ## final estimation
     beta_est_cen = beta_est_ini + S / G_slope
-
-    # print(eq_itcp, eq_slope)
-
     vec_beta_est_cen[j_cen] = beta_est_cen
+
+    beta_ora_est_cen = beta_est_ini + S_ora / G_slope
+    vec_beta_ora_est_cen[j_cen] = beta_ora_est_cen
 
 beta_est = np.mean(vec_beta_est_cen)
 
+beta_ora_est = np.mean(vec_beta_ora_est_cen)
+
 ## output
 print("S estimation:       ", S)
+print("S ora estimation:   ", S_ora)
 print("local estimation:   ", vec_beta_est_local)
 print("central estimation: ", vec_beta_est_cen)
 print("initial estimation: ", beta_est_ini)
 print("final estimation:   ", beta_est)
+print("oracle esitmation:  ", beta_ora_est)
 
-print("=" * 40)
-print("bias", beta_est - beta_est_ini)

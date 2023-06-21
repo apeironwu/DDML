@@ -21,30 +21,32 @@ def fun_sigm(X):
 
 def fun_mu(X, j):
     p = len(X)
-    jp = np.mod(j + 1, p)
-    jm = np.mod(j - 1, p)
-    out = fun_sigm(X[j]) + .25 * X[jp] + .25 * X[jm]
-    out = out * 2
+    jp = np.mod(j + 2, p)
+    out = fun_sigm(X[j]) + .25 * X[jp]
+    out = out * 3
     return out
 
 def fun_gamma(X, j): 
     p = len(X)
-    jp = np.mod(j + 1, p)
-    jm = np.mod(j - 1, p)
-    out = X[j] - .25 * fun_sigm(X[jp]) - .25 * fun_sigm(X[jm])
+    jp = np.mod(j + 2, p)
+    out = X[jp] + .25 * fun_sigm(X[j])
     out = out * 12
     return out
 
 
 
+
+
+
+
 ## parameter setting
-n = 100
-K = 4
+n = 200
+K = 3
 
-p = K
-beta = 0.5
+p = K + 5
+beta = 2
 
-psi_u = 16
+psi_u = 36
 psi_v = 9
 
 psi_u_inv = 1 / psi_u
@@ -97,19 +99,24 @@ for j in range(K):
     vec_D_cau = mat_D[:n_thresh, j]
     vec_Y_cau = mat_Y[:n_thresh, j]
 
+    # rf_xi = RandomForestRegressor(n_estimators=578, max_features=20, max_depth=3, min_samples_leaf=6)
     rf_xi = RandomForestRegressor()
     rf_xi.fit(mat_X_nui, vec_Y_nui)
 
+    # rf_mu = RandomForestRegressor(n_estimators=332, max_features=12, max_depth=5, min_samples_leaf=1)
     rf_mu = RandomForestRegressor()
     rf_mu.fit(mat_X_nui, vec_D_nui)
+
+    list_xi_est.append(rf_xi)
+    list_mu_est.append(rf_mu)
 
     vec_Y_res = vec_Y_cau - rf_xi.predict(mat_X_cau)
     vec_D_res = vec_D_cau - rf_mu.predict(mat_X_cau)
 
     vec_beta_est_local[j] = 1 / (vec_D_res.T @ vec_D_res) * (vec_D_res.T @ vec_Y_res)
+
+    print("Var S org: ", np.var((vec_Y_res - vec_D_res * beta) * (vec_D_res)))
     
-    list_xi_est.append(rf_xi)
-    list_mu_est.append(rf_mu)
 
 beta_est_ini = np.mean(vec_beta_est_local)
 
@@ -130,13 +137,70 @@ for j in range(K):
     
     print("Var V: ", np.var(vec_D_res))
     print("Var U: ", np.var(vec_Y_res - vec_D_res * beta_est_ini))
+    print("Var S: ", np.var(vec_s_cur))
     
     vec_S_est[j] = np.mean(vec_s_cur)
 
 S = np.mean(vec_S_est)
 
+## [test] caculate oracle S estimation
+vec_s_ora_cur = np.zeros(n_thresh)
+vec_S_ora_est = np.zeros(K)
+
+for j in range(K): 
+    ## estimating
+    mat_X_cau = arr_X[j][:n_thresh, :]
+    vec_D_cau = mat_D[:n_thresh, j]
+    vec_Y_cau = mat_Y[:n_thresh, j]
+    
+    vec_mu_ora_est = np.array(list(map(lambda X: fun_mu(X, j), mat_X_cau)))
+    vec_gamma_ora_est = np.array(list(map(lambda X: fun_gamma(X, j), mat_X_cau)))
+
+    vec_s_ora_cur = (vec_D_cau - vec_mu_ora_est) * (vec_Y_cau - vec_D_cau * beta_est_ini - vec_gamma_ora_est)
+    
+    vec_S_ora_est[j] = np.mean(vec_s_ora_cur)
+    
+S_ora = np.mean(vec_S_ora_est)
+
+## [test] comparison of estimation and oracle estimation for S
+for j in range(K):
+    ## estimating
+    mat_X_cau = arr_X[j][:n_thresh, :]
+    vec_D_cau = mat_D[:n_thresh, j]
+    vec_Y_cau = mat_Y[:n_thresh, j]
+    
+    vec_D_res = vec_D_cau - list_mu_est[j].predict(mat_X_cau)
+    vec_Y_res = vec_Y_cau - list_xi_est[j].predict(mat_X_cau)
+
+    vec_V_est = vec_D_res
+    vec_U_est = vec_Y_res - vec_D_res * beta_est_ini
+    
+    vec_mu_ora_est = np.array(list(map(lambda X: fun_mu(X, j), mat_X_cau)))
+    vec_xi_ora_est = np.array(list(map(lambda X: fun_gamma(X, j), mat_X_cau)))
+
+    vec_V_ora_est = vec_D_cau - vec_mu_ora_est
+    vec_U_ora_est = vec_Y_cau - vec_D_cau * beta_est_ini - vec_xi_ora_est
+
+    
+    print("Cor_V: est - ora_est: \n", np.corrcoef(
+        np.column_stack((vec_V_est, vec_V_ora_est, mat_V[:n_thresh, j])).T
+    ))
+    print("Cor_U: est - ora_est: \n", np.corrcoef(
+        np.column_stack((vec_U_est, vec_U_ora_est, mat_U[:n_thresh, j])).T
+    ))
+
+    
+
+
+
+
+
+
+
+
 ## operation in the central site
 vec_beta_est_cen = np.zeros(K)
+vec_beta_ora_est_cen = np.zeros(K)
 
 for j_cen in range(K):
 # for j_cen in [0]:
@@ -169,7 +233,7 @@ for j_cen in range(K):
         mat_G_slope[:, j] = np.power(vec_Y_res_cur, 2) - np.power(vec_Y_res_cen, 2)
         mat_G_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_G_slope[:, j]) ## density ratio
 
-        # print("density ratio: ", np.median(mat_G_slope[:, j]))
+        print("density ratio: ", np.median(mat_G_slope[:, j]))
         
         mat_G_slope[:, j] = mat_G_slope[:, j] * np.power(vec_D_cen - vec_mu_cur_pred, 2) ## residual product
 
@@ -179,18 +243,25 @@ for j_cen in range(K):
     G_slope = np.mean(mat_G_slope)
 
     beta_est_cen = beta_est_ini + S / G_slope
-
     vec_beta_est_cen[j_cen] = beta_est_cen
+
+    beta_ora_est_cen = beta_est_ini + S_ora / G_slope
+    vec_beta_ora_est_cen[j_cen] = beta_ora_est_cen
 
 ## final estimation
 beta_est = np.mean(vec_beta_est_cen)
 
+beta_est_ora = np.mean(vec_beta_ora_est_cen)
+
+
 ## output
-print("S: ", S)
-print("local estimation:   ", vec_beta_est_local)
-print("central estimation: ", vec_beta_est_cen)
-print("initial estimation: ", beta_est_ini)
-print("final estimation:   ", beta_est)
+print("|", "S estimation:       ", S)
+print("|", "S oracle est:       ", S_ora)
+print("|", "local estimation:   ", vec_beta_est_local)
+print("|", "central estimation: ", vec_beta_est_cen)
+print("|", "initial estimation: ", beta_est_ini)
+print("|", "final estimation:   ", beta_est)
+print("|", "oracle estimation:  ", beta_est_ora)
 
 # print(rnd, beta_est, beta_est_ini, sep=", ")
 
