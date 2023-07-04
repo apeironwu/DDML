@@ -104,6 +104,7 @@ def main(argv):
     psi_v = 9
 
     psi_u_inv = 1 / psi_u
+    psi_v_inv = 1 / psi_v
 
     if path_out is None: 
         print(
@@ -125,7 +126,6 @@ def main(argv):
         for rnd_ds in (128 + np.array(range(n_rds))):
 
             try:
-
                 # print(rnd_np, rnd_ds)
             
                 ## set `numpy` random seed
@@ -266,8 +266,16 @@ def main(argv):
                         
                         vec_U_loc_est = vec_Y_loc_diff - vec_D_cen * beta_est_ini
                         
-                        mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
-                        mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j]) ## density ratio
+                        ## single density estimation
+                        # mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
+                        # mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j])
+
+                        ## multiple density estimation
+                        mat_U_slope[:, j] = psi_u_inv * \
+                            (np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2))
+                        mat_U_slope[:, j] = mat_U_slope[:, j] + psi_v_inv * \
+                            (np.power(vec_D_loc_diff, 2) - np.power(vec_D_cen_diff, 2))
+                        mat_U_slope[:, j] = np.exp(-.5 * mat_U_slope[:, j]) 
 
                         # print("density ratio: ", np.median(mat_U_slope[:, j]))
                         
@@ -367,9 +375,17 @@ def main(argv):
                             vec_Y_loc_diff = vec_Y_cen - list_gamma_est[j].predict(mat_X_cen)
                             
                             vec_U_loc_est = vec_Y_loc_diff - vec_D_cen * beta_est_ini
-                            
-                            mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
-                            mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j]) ## density ratio
+                           
+                            ## single density estimation
+                            # mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
+                            # mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j])
+
+                            ## multiple density estimation
+                            mat_U_slope[:, j] = psi_u_inv * \
+                                (np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2))
+                            mat_U_slope[:, j] = mat_U_slope[:, j] + psi_v_inv * \
+                                (np.power(vec_D_loc_diff, 2) - np.power(vec_D_cen_diff, 2))
+                            mat_U_slope[:, j] = np.exp(-.5 * mat_U_slope[:, j]) 
 
                             # print("density ratio: ", np.median(mat_U_slope[:, j]))
                             

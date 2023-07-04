@@ -36,14 +36,12 @@ def fun_gamma(X, j):
 #     return out
 
 
-
-
 n_iter = 2
 
 vec_beta_est_iter = np.zeros(n_iter)
 
 ## parameter setting
-n = 500
+n = 100
 K = 5
 
 p = K + 3
@@ -65,9 +63,7 @@ print("rnd", "Average", "M1", "M2", sep=",")
 ## data generation 
 
 #### randomization
-# rnd = 136
-# np.random.seed(rnd)
-for rnd in (128 + np.array(range(100))): 
+for rnd in (2023 + np.array(range(100))): 
     np.random.seed(rnd)
 
     #### uncorrelated X

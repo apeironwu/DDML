@@ -26,7 +26,7 @@ def fun_gamma(X, j):
 # time_start = time.time()
 
 
-n_iter = 5
+n_iter = 2
 
 vec_beta_est_iter = np.zeros(n_iter)
 
@@ -44,10 +44,15 @@ psi_v = 9
 
 psi_u_inv = 1 / psi_u
 
-print("rnd_np", "rnd_ds", "Average", "M1", "M2", "M3", "M4", "M5", sep=",")
+print(
+    "rnd_np", "rnd_ds", "Average", 
+    "M1", "M2", 
+    # "M3", "M4", "M5", 
+    sep=","
+)
 
 ## data generation 
-n_rnp = 2
+n_rnp = 3
 n_rds = 1
 
 #### randomization
@@ -82,8 +87,8 @@ for rnd_np in (128 + np.array(range(n_rnp))):
         
         n_est = int(n / 2)
 
-        # idx_est = np.array(list(range(n_est))) ## non-random splitting
-        idx_est = np.array(list(set(random.sample(range(n), n_est)))) ## random splitting
+        idx_est = np.array(list(range(n_est))) ## non-random splitting
+        # idx_est = np.array(list(set(random.sample(range(n), n_est)))) ## random splitting
         idx_nui = np.array(list(set(range(n)) - set(idx_est)))
 
         i_iter = 0
@@ -335,9 +340,9 @@ for rnd_np in (128 + np.array(range(n_rnp))):
             np.mean(vec_beta_est_local),
             vec_beta_est_iter[0],
             vec_beta_est_iter[1], 
-            vec_beta_est_iter[2],
-            vec_beta_est_iter[3], 
-            vec_beta_est_iter[4], 
+            # vec_beta_est_iter[2],
+            # vec_beta_est_iter[3], 
+            # vec_beta_est_iter[4], 
             sep=","
         )
 
