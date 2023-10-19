@@ -1,0 +1,49 @@
+#!/bin/bash
+#SBATCH -J sim_org_ini_odd_n1000_rnp100_rds10_Kvar
+#SBATCH -N 1 -c 8
+#SBATCH --mem=100G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1-4
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+# default value
+# K=10
+p=60
+n=1000
+# n_rft=100
+den_est="ora_dou"
+
+## set variable parameters
+K_cancdi=(5 5 10 10)
+rft_candi=(200 500 200 500)
+idx=$((SLURM_ARRAY_TASK_ID - 1))
+K=${K_cancdi[idx]}
+n_rft=${rft_candi[idx]}
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with p = $p, K = $K, and n_rft = $n_rft
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim2_org_ini_rds_Kvar_denest_args.py \
+    --K $K \
+    --n $n \
+    --p $p \
+    --n_rft $n_rft \
+    --den_est $den_est \
+    --path_out output/out_sim2_org_ini_odd_K${K}_n${n}_p${p}_rnp100_rds10_rft${n_rft}.csv
