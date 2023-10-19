@@ -1,6 +1,7 @@
 import numpy as np
 import random
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.base import clone
 import time
 import sys, getopt
 
@@ -8,43 +9,58 @@ def fun_sigm(X):
     out = np.exp(X) / (1 + np.exp(X)) 
     return out
 
-
 ## nonlinear case
 def fun_mu(X, j):
     p = len(X)
     jp = np.mod(j + 2, p)
-    out = fun_sigm(X[j]) + .25 * X[jp]
-    out = out * 3
+    out = fun_sigm(X[j]) + .5 * X[jp]
     return out
 
 def fun_gamma(X, j): 
     p = len(X)
     jp = np.mod(j + 2, p)
-    out = X[j] + .25 * fun_sigm(X[jp])
-    out = out * 12
+    out = X[j] + 2 * fun_sigm(X[jp])
+    return out
+
+def fun_quad(vec_U, vec_eps, mat_cov_inv): 
+    mat_U_eps = np.vstack((vec_U, vec_eps))
+    out = np.diag(mat_U_eps.T @ mat_cov_inv @ mat_U_eps)
+
+    ## alternative realization
+    # mat_U_eps = np.vstack((vec_U, vec_eps))
+    # out = np.apply_along_axis(lambda row: row @ mat_cov_inv @ row.T, 1, mat_U_eps.T)
+
     return out
 
 def main(argv):
     
     ## default values
-    n = 100
+    n = 1000
     K = 5
-    n_rnp = 100
-    n_rds = 10
+    p = 20
+    n_rnp = 3
+    n_rds = 1
     n_iter = 2
     path_out = None
-    # bl_cor_X = False
+    bl_cor_X = True
+    den_est = "joint"
+    rf_set = "0"
+    rf_fi = False
     psi_d = .1
     
     prompt_help = [
         'sim3_args.py',
         '--K <# of sites>',
         '--n <# sample size>',
+        '--p <dim of covariates>',
         '--n_rnp <# replication>',
         '--n_rds <# data splitting>',
         '--n_iter <# iteration>',
         '--path_out <output path>',
-        # '--bl_cor_X <correlated X (True) or not (False)>', 
+        '--bl_cor_X <correlated X (True) or not (False)>', 
+        '--den_est <joint or single>',
+        '--rf_set <setting of random forest>',
+        '--rf_fi <check the RF feature importance (True) or not (False)>', 
         '--psi_d <variance of D>'
     ]
 
@@ -54,11 +70,15 @@ def main(argv):
             [
                 "n=",
                 "K=",
+                "p=",
                 "n_rnp=",
                 "n_rds=", 
                 "n_iter=",
                 "path_out=",
-                # "bl_cor_X=", 
+                "bl_cor_X=", 
+                "den_est=", 
+                "rf_set=", 
+                "rf_fi=", 
                 "psi_d="
             ]
         )
@@ -74,6 +94,8 @@ def main(argv):
             K = int(arg)
         elif opt in ("--n"):
             n = int(arg)
+        elif opt in ("--p"):
+            p = int(arg)
         elif opt in ("--n_rnp"):
             n_rnp = int(arg)
         elif opt in ("--n_rds"):
@@ -82,19 +104,36 @@ def main(argv):
             n_iter = int(arg)
         elif opt in ("--path_out"):
             path_out = arg
-        # elif opt in ("--bl_cor_X"):
-        #     bl_cor_X = arg == "True"
+        elif opt in ("--bl_cor_X"):
+            bl_cor_X = arg == "True"
+        elif opt in ("--den_est"):
+            den_est = arg
+        elif opt in ("--rf_set"):
+            rf_set = arg
+        elif opt in ("--rf_fi"):
+            rf_fi = arg == "True"
         elif opt in ("--psi_d"):
             psi_d = float(arg)
-    
+
+    while den_est not in ["joint", "single"]:
+        sys.exit("den_est must be either 'joint' or 'single'.")
+    while bl_cor_X not in [True, False]:
+        sys.exit("bl_cor_X must be either 'True' or 'False'.")
+    while rf_fi not in [True, False]:
+        sys.exit("rf_fi must be either 'True' or 'False'.")
+
     print('=' * 20, "Parameter Setting", '=' * 20)
     print('>> K: ', K)
     print('>> n: ', n)
+    print('>> p: ', p)
     print('>> n_rnp: ', n_rnp)
     print('>> n_rds: ', n_rds)
     print('>> n_iter: ', n_iter)
     print('>> path_out: ', path_out)
-    # print('>> bl_cor_X: ', bl_cor_X)
+    print('>> bl_cor_X: ', bl_cor_X)
+    print('>> den_est: ', den_est)
+    print('>> rf_set: ', rf_set)
+    print('>> rf_fi: ', rf_fi)
     print('>> psi_d: ', psi_d)
 
     time_start = time.time()
@@ -102,51 +141,80 @@ def main(argv):
     vec_beta_est_iter = np.zeros(n_iter)
 
     ## parameter setting
-    p = K + 3
-    beta = 2
+    beta = 0.5
 
-    # large variance
-    psi_u = 36
-    psi_v = 9
+    # variance of error term
+    psi_u = 1
+    psi_v = 1
+    
+    # random forest setting 
+    # n_rft = 200
+    if rf_set == "0":
+        rf = RandomForestRegressor(n_estimators=200)
+    elif rf_set == "1":
+        rf = RandomForestRegressor(n_estimators=200, min_samples_leaf=20)
+    elif rf_set == "2":
+        rf = RandomForestRegressor(n_estimators=200, min_samples_leaf=15)
+    elif rf_set == "3":
+        rf = RandomForestRegressor(n_estimators=200, min_samples_leaf=25)
+    elif rf_set == "4":
+        rf = RandomForestRegressor(n_estimators=200, max_features="sqrt")
+    elif rf_set == "5":
+        rf = RandomForestRegressor(n_estimators=200, max_features="log2")
+    else: 
+        sys.exit("rf_set must be char_type and ranged from '0' to '5'.")
+    
+    rf_gamma = clone(rf)
+    rf_mu = clone(rf)
+    
+    # rf_gamma = RandomForestRegressor(n_estimators=200)
+    # rf_mu = RandomForestRegressor(n_estimators=200)
+    # rf_gamma = RandomForestRegressor(n_estimators=132, max_features=12, max_depth=5, min_samples_leaf=1)
+    # rf_mu = RandomForestRegressor(n_estimators=378, max_features=20, max_depth=3, min_samples_leaf=6)
 
     psi_u_inv = 1 / psi_u
+    psi_v_inv = 1 / psi_v
+
+    rho_U_eps = 0.75 ## default value
+    cormat_U_eps = np.fromfunction(lambda i, j: np.power(rho_U_eps, np.abs(i - j)), (2, 2))
+    diagmat_psi_ud_sqrt = np.sqrt(np.diag([psi_u, psi_d]))
+    covmat_U_eps = diagmat_psi_ud_sqrt @ cormat_U_eps @ diagmat_psi_ud_sqrt
+    covmat_U_eps_inv = np.linalg.inv(covmat_U_eps)
 
     if path_out is None: 
         print(
             "rnd_np", "rnd_ds", "Average", 
             ",".join(["M" + str(i + 1) for i in range(n_iter)]),
+            "MSE(U)", "MSE(V)",
             sep=",", 
         )
     else:
         print(
             "rnd_np", "rnd_ds", "Average", 
             ",".join(["M" + str(i + 1) for i in range(n_iter)]),
+            "MSE(U)", "MSE(V)",
             sep=",", 
             file = open(path_out, "w")
         )
 
     #### randomization
-    for rnd_np in (2023 + np.array(range(n_rnp))): 
-        for rnd_ds in (2023 + np.array(range(n_rds))):
+    for rnd_np in (128 + np.array(range(n_rnp))): 
+        for rnd_ds in (128 + np.array(range(n_rds))):
 
             try: 
                 ## set `numpy` random seed
                 np.random.seed(rnd_np)
 
-                #### uncorrelated X
-                arr_X = np.random.randn(K, n, p)
-
-                # #### correlated X
-                # covmat_X = np.fromfunction(lambda i, j: np.power(0.7, np.abs(i - j)), (p, p))
-                # arr_X = np.random.multivariate_normal(np.zeros(p), covmat_X, K * n).reshape(K, n, p)
-
-                # mat_U = np.random.randn(n, K) * np.sqrt(psi_u)
-                # mat_V = np.random.randn(n, K) * np.sqrt(psi_v)
-                # mat_D_err = np.random.randn(n, K) * np.sqrt(psi_d)
+                if not bl_cor_X:
+                    #### uncorrelated X
+                    arr_X = np.random.randn(K, n, p)
+                elif bl_cor_X:
+                    #### correlated X
+                    covmat_X = np.fromfunction(lambda i, j: np.power(0.7, np.abs(i - j)), (p, p))
+                    arr_X = np.random.multivariate_normal(np.zeros(p), covmat_X, K * n).reshape(K, n, p)
 
                 #### correlated U and eps
-                covmat_U_eps = np.fromfunction(lambda i, j: np.power(0.75, np.abs(i - j)), (2, 2))
-                arr_U_eps = np.random.multivariate_normal(np.zeros(2), covmat_U_eps, K * n).T.reshape(2, n, K)
+                arr_U_eps = np.random.multivariate_normal(np.zeros(2), cormat_U_eps, K * n).T.reshape(2, n, K)
 
                 mat_U = arr_U_eps[0] * np.sqrt(psi_u)
                 mat_eps = arr_U_eps[1] * np.sqrt(psi_d)
@@ -182,6 +250,10 @@ def main(argv):
                 list_gamma_est = list()
                 list_mu_est = list()
 
+                ## prediction error
+                vec_U_mse = np.zeros(K)
+                vec_V_mse = np.zeros(K)
+
                 for j in range(K):
                     ## data for training ML model
                     mat_X_nui = arr_X[j][idx_nui, :]
@@ -195,14 +267,17 @@ def main(argv):
                     vec_D_est = mat_D[idx_est, j]
                     vec_Y_est = mat_Y[idx_est, j]
 
-                    model_mu = RandomForestRegressor(n_estimators=n)
+                    # model_mu = RandomForestRegressor(n_estimators=n_rft)
+                    model_mu = clone(rf_mu)
                     model_mu.fit(mat_X_nui, vec_Z_nui)
                     
                     ## estimation of beta based on partialling out score function
-                    model_zeta = RandomForestRegressor(n_estimators=n)
+                    # model_zeta = RandomForestRegressor(n_estimators=n_rft)
+                    model_zeta = clone(rf_mu)
                     model_zeta.fit(mat_X_nui, vec_D_nui)
                     
-                    model_xi = RandomForestRegressor(n_estimators=n)
+                    # model_xi = RandomForestRegressor(n_estimators=n_rft)
+                    model_xi = clone(rf_gamma)
                     model_xi.fit(mat_X_nui, vec_Y_nui)
                     
                     vec_Z_diff = vec_Z_est - model_mu.predict(mat_X_est)
@@ -211,7 +286,8 @@ def main(argv):
                     
                     beta_est_local = np.mean(vec_Y_diff * vec_Z_diff) / np.mean(vec_D_diff * vec_Z_diff)
 
-                    model_gamma = RandomForestRegressor(n_estimators=n)
+                    # model_gamma = RandomForestRegressor(n_estimators=n_rft)
+                    model_gamma = clone(rf_gamma)
                     model_gamma.fit(mat_X_nui, vec_Y_nui - vec_D_nui * beta_est_local)
 
                     list_mu_est.append(model_mu)
@@ -219,14 +295,22 @@ def main(argv):
 
                     vec_beta_est_local[j] = beta_est_local
 
+                    ## prediction error
+                    vec_U_mse[j] = np.mean(np.power(vec_Y_diff - vec_D_est * beta_est_local, 2))
+                    vec_V_mse[j] = np.mean(np.power(vec_Z_diff, 2))
+
+                    ## feature importance
+                    if rf_fi: 
+                        print("FI_mu", model_mu.feature_importances_)
+                        print("FI_gamma", model_gamma.feature_importances_)
+                    
+                    
+
                 beta_est_ini = np.mean(vec_beta_est_local)
 
                 ## statistics from other sites
                 vec_s = np.zeros(n_est)
                 vec_S_est = np.zeros(K)
-
-                # vec_s_ora = np.zeros(n_est)
-                # vec_S_ora_est = np.zeros(K)
 
                 for j in range(K): 
                     ## estimating
@@ -242,22 +326,12 @@ def main(argv):
                     
                     vec_S_est[j] = np.mean(vec_s)
 
-                    # vec_D_ora_diff = vec_D_est - np.array(list(map(lambda X: fun_mu(X, j), mat_X_est))) 
-                    # vec_Y_ora_diff = vec_Y_est - np.array(list(map(lambda X: fun_gamma(X, j), mat_X_est)))
-                    
-                    # vec_s_ora = (vec_Y_ora_diff - vec_D_est * beta_est_ini) * vec_D_ora_diff
-                    # vec_S_ora_est[j] = np.mean(vec_s_ora)
-
-
                 S = np.mean(vec_S_est)
-
-                # S_ora = np.mean(vec_S_ora_est)
 
 
 
                 ## operation in the central site
                 vec_beta_est_cen = np.zeros(K)
-                # vec_beta_ora_est_cen = np.zeros(K)
 
                 for j_cen in range(K):
                 # for j_cen in [0]:
@@ -280,8 +354,19 @@ def main(argv):
                         
                         vec_U_loc_est = vec_Y_loc_diff - vec_D_cen * beta_est_ini
                         
-                        mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
-                        mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j]) ## density ratio
+                        if den_est == "single":
+                            ## single density estimation
+                            mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
+                            mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j]) ## density ratio
+                        elif den_est == "joint":
+                            ## joint density estimation
+                            vec_D_res = vec_D_cen - vec_Z_cen
+
+                            mat_U_slope[:, j] = fun_quad(vec_U_loc_est, vec_D_res, covmat_U_eps_inv) - \
+                                fun_quad(vec_U_cen_est, vec_D_res, covmat_U_eps_inv)
+                            mat_U_slope[:, j] = mat_U_slope[:, j] + psi_v_inv * \
+                                (np.power(vec_Z_loc_diff, 2) - np.power(vec_Z_cen_diff, 2))
+                            mat_U_slope[:, j] = np.exp(-.5 * mat_U_slope[:, j]) ## density ratio
 
                         # print("density ratio: ", np.median(mat_U_slope[:, j]))
                         
@@ -289,19 +374,13 @@ def main(argv):
 
                         # print(" " * 40, "U_slope:       ", np.median(mat_U_slope[:, j]))
 
-
                     U_slope = np.mean(mat_U_slope)
 
                     beta_est_cen = beta_est_ini + S / U_slope
                     vec_beta_est_cen[j_cen] = beta_est_cen
 
-                    # beta_ora_est_cen = beta_est_ini + S_ora / U_slope
-                    # vec_beta_ora_est_cen[j_cen] = beta_ora_est_cen
-
                 ## final estimation
                 beta_est = np.mean(vec_beta_est_cen)
-
-                # beta_est_ora = np.mean(vec_beta_ora_est_cen)
 
                 vec_beta_est_iter[i_iter] = beta_est
                 i_iter += 1
@@ -318,7 +397,8 @@ def main(argv):
                         vec_Y_nui = mat_Y[idx_nui, j]
                         
                         ## updating estimation of gamma
-                        model_gamma = RandomForestRegressor(n_estimators=n)
+                        # model_gamma = RandomForestRegressor(n_estimators=n_rft)
+                        model_gamma = clone(rf_gamma)
                         model_gamma.fit(mat_X_nui, vec_Y_nui - vec_D_nui * beta_est)
 
                         list_gamma_est[j] = model_gamma
@@ -328,9 +408,6 @@ def main(argv):
                     ## statistics from other sites
                     vec_s = np.zeros(n_est)
                     vec_S_est = np.zeros(K)
-
-                    # vec_s_ora = np.zeros(n_est)
-                    # vec_S_ora_est = np.zeros(K)
 
                     for j in range(K): 
                         ## estimating
@@ -372,8 +449,20 @@ def main(argv):
                             
                             vec_U_loc_est = vec_Y_loc_diff - vec_D_cen * beta_est_ini
                             
-                            mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
-                            mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j]) ## density ratio
+                            if den_est == "single":
+                                ## single density estimation
+                                mat_U_slope[:, j] = np.power(vec_U_loc_est, 2) - np.power(vec_U_cen_est, 2)
+                                mat_U_slope[:, j] = np.exp(-.5 * psi_u_inv * mat_U_slope[:, j]) ## density ratio
+                            elif den_est == "joint":
+                                ## joint density estimation
+                                vec_D_res = vec_D_cen - vec_Z_cen
+
+                                mat_U_slope[:, j] = fun_quad(vec_U_loc_est, vec_D_res, covmat_U_eps_inv) - \
+                                    fun_quad(vec_U_cen_est, vec_D_res, covmat_U_eps_inv)
+                                mat_U_slope[:, j] = mat_U_slope[:, j] + psi_v_inv * \
+                                    (np.power(vec_Z_loc_diff, 2) - np.power(vec_Z_cen_diff, 2))
+
+                                mat_U_slope[:, j] = np.exp(-.5 * mat_U_slope[:, j]) ## density ratio
 
                             # print("density ratio: ", np.median(mat_U_slope[:, j]))
                             
@@ -390,7 +479,6 @@ def main(argv):
                     vec_beta_est_iter[i_iter] = beta_est
                     i_iter += 1
 
-
                 # print("np rnd:       ", rnd_np)
                 # print("ds rnd:       ", rnd_ds)
                 # print("Average:      ", np.mean(vec_beta_est_local))
@@ -402,6 +490,7 @@ def main(argv):
                         rnd_ds,
                         np.mean(vec_beta_est_local),
                         ','.join(str(b) for b in vec_beta_est_iter),
+                        np.mean(vec_U_mse), np.mean(vec_V_mse),
                         sep=",",
                     )
                 else:
@@ -410,6 +499,7 @@ def main(argv):
                         rnd_ds,
                         np.mean(vec_beta_est_local),
                         ','.join(str(b) for b in vec_beta_est_iter),
+                        np.mean(vec_U_mse), np.mean(vec_V_mse),
                         sep=",",
                         file=open(path_out, "a")
                     )

@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH -J sim3_std_otd_K5_n200_rnp100_rds10
+#SBATCH -N 1 -c 4
+#SBATCH --mem=20G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1-3
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+psi_d_candi=(0.1 9 36)
+
+idx=$((SLURM_ARRAY_TASK_ID - 1))
+
+psi_d_cur=${psi_d_candi[idx]}
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with psi_d=$psi_d_cur
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim3_std_otd_args.py \
+	--n 200 \
+	--psi_d $psi_d_cur \
+	--path_out output/out_sim3_std_otd_K5_n200_rnp100_rds10_psid${psi_d_cur//./}.csv
+

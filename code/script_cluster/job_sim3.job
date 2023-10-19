@@ -1,7 +1,8 @@
 #!/bin/bash
-#SBATCH -J sim_org_ini_K5_n200_rnp100_rds10
+#SBATCH -J sim3_std_K5_n100_iter100
 #SBATCH -N 1 -c 24
 #SBATCH --mem=100G
+#SBATCH -w chpc-cn121
 #SBATCH -o record/slurm_%j_%x_log.out
 #SBATCH -e record/slurm_%j_%x_err.out
 #SBATCH --mail-type=ALL
@@ -18,7 +19,9 @@ conda activate py_ddml
 # set working directory
 cd /project/Stat/s1155168529/programs/DDML
 
-cat code/simulation/sim2_org_ini_rds_f.py
+cat ====================================================
+cat code/simulation/sim3_std.py
+cat ====================================================
 
 # main part
-python code/simulation/sim2_org_ini_rds_f.py
+python code/simulation/sim3_std.py > output/out_sim3_std_K5_n100_iter100.csv

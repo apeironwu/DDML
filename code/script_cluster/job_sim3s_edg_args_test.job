@@ -1,0 +1,47 @@
+#!/bin/bash
+#SBATCH -J sim3s_edg_test
+#SBATCH -N 1 -c 5
+#SBATCH --mem=20G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1-6
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+n=1000
+# psi_d=0.1
+K=5
+# p=8
+
+psid_candi=(0.1 0.5 1 0.1 0.5 1)
+p_candi=(8 8 8 20 20 20)
+
+idx=$((SLURM_ARRAY_TASK_ID - 1))
+
+psi_d=${psid_candi[idx]}
+p=${p_candi[idx]}
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with n=$n, p=$p, K=$K, psi_d=$psi_d
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim3s_edg_args_.py \
+	--n $n \
+	--K $K \
+	--p $p \
+	--psi_d $psi_d \
+	--path_out output/out_sim3s_edg_K${K}_n${n}_p${p}_psid${psi_d//./}_srf_test.csv

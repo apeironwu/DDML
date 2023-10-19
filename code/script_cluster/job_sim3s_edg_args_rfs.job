@@ -1,0 +1,39 @@
+#!/bin/bash
+#SBATCH -J sim3s_edg_rfs
+#SBATCH -N 1 -c 10
+#SBATCH --mem=50G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+rf_set=2
+
+# idx=$((SLURM_ARRAY_TASK_ID - 1))
+# rf_set=$idx
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with RF setting $rf_set
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim3s_edg_args_rfs.py \
+	--n_rnp 100 \
+	--n_rds 10 \
+	--n_iter 2 \
+	--rf_set $rf_set \
+	--path_out output/out_sim3s_edg_rfss${rf_set}_test.csv
