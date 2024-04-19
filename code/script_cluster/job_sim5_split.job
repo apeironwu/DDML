@@ -1,0 +1,46 @@
+#!/bin/bash
+#SBATCH -J sim5_split
+#SBATCH -N 1 -c 8
+#SBATCH --mem=32G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1-3%3
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+# set variable parameters
+K_candi=(5 5 5 10 10 10)
+psid_candi=(0.1 0.5 1.0 0.1 0.5 1.0)
+
+idx=$((SLURM_ARRAY_TASK_ID - 1))
+n=1000
+K=${K_candi[idx]}
+psi_d=${psid_candi[idx]}
+n_rft=300
+n_rds=20
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with n = $n
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim5_split.py \
+    --n $n \
+    --K $K \
+    --n_rft $n_rft \
+    --n_rds $n_rds \
+    --psi_d $psi_d \
+    --path_out output/out_sim5_split_K${K}_n${n}_psid${psi_d}_nrft${n_rft}_rnp100_rds${n_rds}.csv 
