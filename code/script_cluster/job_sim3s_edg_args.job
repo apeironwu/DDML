@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH -J sim3s_edg_jd_n1000_Kvar
-#SBATCH -N 1 -c 5
-#SBATCH --mem=20G
+#SBATCH -N 1 -c 8
+#SBATCH --mem=50G
 #SBATCH -o record/slurm_%j_%x_log.out
 #SBATCH -e record/slurm_%j_%x_err.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
-#SBATCH --array=1-3
+#SBATCH --array=1-6
 
 # basic information
 echo Time is `date`
@@ -22,13 +22,12 @@ cd /project/Stat/s1155168529/programs/DDML
 # set parameters
 n=1000
 p=20
-n_iter=10
+n_iter=2
 den_est=joint
-avg=median
 
 # candidate values
-K_candi=(5 5 5)
-psi_d_candi=(0.1 0.5 1)
+K_candi=(5 5 5 10 10 10)
+psi_d_candi=(0.1 0.5 1 0.1 0.5 1)
 
 idx=$((SLURM_ARRAY_TASK_ID - 1))
 
@@ -47,7 +46,6 @@ srun python code/simulation/sim3s_edg_args.py \
 	--p $p \
 	--K $K \
 	--den_est $den_est \
-	--ini_avg $avg \
 	--psi_d $psi_d_cur \
-	--path_out output/out_sim3s_edg_jd_K${K}_n${n}_p${p}_psid${psi_d_cur//./}_${avg}.csv
+	--path_out output/out_sim3s_edg_jd_K${K}_n${n}_p${p}_psid${psi_d_cur//./}_new.csv
 
