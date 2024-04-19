@@ -1,12 +1,13 @@
 #!/bin/bash
-#SBATCH -J sim2s_Kvar_n1000_rnp500_rds10
-#SBATCH -N 1 -c 2
-#SBATCH --mem=32G
+#SBATCH -J sim2cs_expt_ora
+#SBATCH -N 5
+#SBATCH -w chpc-gpu019
+#SBATCH --gres=gpu:1
 #SBATCH -o record/slurm_%j_%x_log.out
 #SBATCH -e record/slurm_%j_%x_err.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
-#SBATCH --array=1-4
+#SBATCH --array=1-3
 
 # basic information
 echo Time is `date`
@@ -20,30 +21,20 @@ conda activate py_ddml
 cd /project/Stat/s1155168529/programs/DDML
 
 # default value
-# K=10
-# p=60
-n=1000
-n_rft=200
-n_rnp=500
 
 ## set variable parameters
-K_candi=(5 5 10 10)
-p_candi=(20 50 20 50)
+sd_cs_candi=(0.1 0.2 0.5)
 idx=$((SLURM_ARRAY_TASK_ID - 1))
-K=${K_candi[idx]}
-p=${p_candi[idx]}
+sd_cs=${sd_cs_candi[idx]}
 
 # print info
 echo ======================================
 echo Time is `date`
-echo Job name: $SLURM_JOB_NAME with K = $K and p = $p
+echo Job name: $SLURM_JOB_NAME with sd_cs = $sd_cs
 echo Running on the node: $SLURM_JOB_NODELIST
 
 # main part
-srun python code/simulation/sim2s_args.py \
-    --K $K \
-    --n $n \
-    --p $p \
-    --n_rft $n_rft \
-    --n_rnp $n_rnp \
-    --path_out output/out_sim2s_K${K}_p${p}_n${n}_rnp${n_rnp}_rds10_rft${n_rft}.csv 
+srun python code/simulation/sim2cs_expt_ora_args.py \
+    --n 600 \
+    --sd_cs $sd_cs \
+    --path_out output/out_sim2cs_expt_ora_n600_sdcs${sd_cs//./}.csv 
