@@ -162,3 +162,13 @@ cython_debug/
 
 # records
 record/
+
+# datat 
+data/*.csv
+
+# output csv
+output/*.csv
+output/*.pdf
+output/*.png
+
+External/
