@@ -1,0 +1,375 @@
+import numpy as np
+import random
+from sklearn.ensemble import RandomForestRegressor
+import time
+import sys, getopt
+import scipy.stats as stats
+
+
+import matplotlib.pyplot as plt
+
+
+def fun_sigm(X): 
+    out = np.exp(X) / (1 + np.exp(X)) 
+    return out
+
+## nonlinear case - return the probability of rare event
+def fun_mu(X, j, alpha = 1, beta = 10, ip = 2.0):
+    j = 0
+    p = len(X)
+    jp_step = 1  ## default
+    j = np.mod(j, p) 
+    jp = np.mod(j + jp_step, p) 
+    out = .25 * X[jp] + fun_sigm(X[j]) 
+    out = fun_sigm(beta * (out - ip))  ## rareCov 
+    return out
+
+def fun_gamma(X, j, vec_gam = [1.0, 2.0]): 
+    j = 0
+    p = len(X)
+    jp_step = 1  ## default
+    jp = np.mod(j + jp_step, p)
+    out = vec_gam[0] * X[j] + vec_gam[1] * fun_sigm(X[jp])  ## default
+    return out
+    # out = out * 2.0  ## double gamma
+    # out = out * 0.5  ## half gamma
+
+
+def main(argv): 
+
+    ## default values
+    n = 300
+    K = 10
+    p = 5
+    n_rnp = 1
+    n_rds = 1
+    n_iter = 2
+    n_rft = 100
+    mu_alpha = 1.0
+    mu_beta = 2.0 
+    mu_ip = 0.0
+    eps_d = 0.0
+    vgam = 7
+    rnp_np_ini = 128
+    path_out = None
+    bl_cor_X = True
+    den_est = "single"
+    
+    prompt_help = [
+        'sim2m_rareCov_test.py',
+        '--n <# sample size>',
+        '--K <# of sites>',
+        '--p <# of confounders>', 
+        '--n_rnp <# replication>',
+        '--n_rds <# data splitting>',
+        '--n_iter <# iteration>',
+        '--n_rft <# random forest trees>',
+        '--mu_alpha <shift scale in mu>',
+        '--mu_beta <max slope in mu>',
+        '--mu_ip <inflection point in mu>',
+        '--eps_d <thresh for eps>',
+        '--vgam <vgam setting>',
+        '--rnp_np_ini <rnp np initial>',
+        '--path_out <output path>',
+        '--bl_cor_X <correlated X (True) or not (False)>',
+        '--den_est <density estimation method, "single", or "ora_dou">'
+    ]
+
+    try:
+        opts, args = getopt.getopt(
+            argv, "h",
+            [
+                "n=",
+                "K=",
+                "p=",
+                "n_rnp=",
+                "n_rds=", 
+                "n_iter=",
+                "n_rft=",
+                "mu_alpha=",
+                "mu_beta=",
+                "mu_ip=",
+                "eps_d=",
+                "vgam=",
+                "rnp_np_ini=",
+                "path_out=",
+                "bl_cor_X=",
+                "den_est="
+            ]
+        )
+    except getopt.GetoptError:
+        print("\n    ".join(prompt_help))
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt == '-h':
+            print("\n    ".join(prompt_help))
+            sys.exit()
+        elif opt in ("--K"):
+            K = int(arg)
+        elif opt in ("--p"):
+            p = int(arg)
+        elif opt in ("--n"):
+            n = int(arg)
+        elif opt in ("--n_rnp"):
+            n_rnp = int(arg)
+        elif opt in ("--n_rds"):
+            n_rds = int(arg)
+        elif opt in ("--n_iter"):
+            n_iter = int(arg)
+        elif opt in ("--n_rft"):
+            n_rft = int(arg)
+        elif opt in ("--mu_alpha"):
+            mu_alpha = float(arg)
+        elif opt in ("--mu_beta"):
+            mu_beta = float(arg)
+        elif opt in ("--mu_ip"):
+            mu_ip = float(arg)
+        elif opt in ("--eps_d"):
+            eps_d = float(arg)
+        elif opt in ("--vgam"):
+            vgam = int(arg)
+        elif opt in ("--rnp_np_ini"):
+            rnp_np_ini = int(arg)
+        elif opt in ("--path_out"):
+            path_out = arg
+        elif opt in ("--bl_cor_X"):
+            bl_cor_X = arg == "True"
+        elif opt in ("--den_est"):
+            den_est = arg
+
+    while den_est not in ["single", "double"]:
+        sys.exit("den_est must be either 'single' or 'double'.")
+
+    # if eps_d < 0 or eps_d > 1:
+    #     sys.exit("eps_d must be between 0 and 1.")
+    
+    print('=' * 20, "Parameter Setting", '=' * 20)
+    print('>> n: ', n)
+    print('>> K: ', K)
+    print('>> p: ', p)
+    print('>> n_rnp: ', n_rnp)
+    print('>> n_rds: ', n_rds)
+    print('>> n_iter: ', n_iter)
+    print('>> n_rft: ', n_rft)
+    print('>> mu_alpha: ', mu_alpha)
+    print('>> mu_beta: ', mu_beta)
+    print('>> mu_ip: ', mu_ip)
+    print('>> eps_d: ', eps_d)
+    print('>> vgam: ', vgam)
+    print('>> rnp_np_ini: ', rnp_np_ini)
+    print('>> path_out: ', path_out)
+    print('>> bl_cor_X: ', bl_cor_X)
+    print('>> den_est: ', den_est)
+
+    time_start = time.time()
+
+    ## parameter setting
+    vec_beta_est_iter = np.zeros(n_iter)
+    vec_beta_ora_est_iter = np.zeros(n_iter)
+
+    beta = -2 ## default
+
+    # large variance
+    psi_u = 4.0   ## default
+    psi_v = 1.0   ## default
+
+    psi_u_inv = 1 / psi_u
+    psi_v_inv = 1 / psi_v
+
+    
+    fig = plt.figure(figsize=(12, 6))
+    ax_weight, ax_var = fig.subplots(1, 2, sharex=True)
+
+    rho_U_eps = 0.75 ## default value
+    cormat_U_eps = np.fromfunction(lambda i, j: np.power(rho_U_eps, np.abs(i - j)), (2, 2))
+
+
+
+    if path_out is None: 
+        print(
+            "rnd_np", "rnd_ds", 
+            "rare_rate", "cor_dz", 
+            "Average", "IVWAvg",
+            # ",".join(["M" + str(i + 1) for i in range(n_iter)]),
+            # ",".join(["Mo" + str(i + 1) for i in range(n_iter)]),
+            sep=",",
+        )
+    else:
+        print(
+            "rnd_np", "rnd_ds", 
+            "rare_rate", "cor_dz", 
+            "Average", "IVWAvg",
+            # ",".join(["M" + str(i + 1) for i in range(n_iter)]),
+            # ",".join(["Mo" + str(i + 1) for i in range(n_iter)]),
+            sep=",", 
+            file = open(path_out, "w")
+        )
+
+    ## data generation 
+    #### randomization
+    for rnd_np in (rnp_np_ini + np.array(range(n_rnp))): 
+        for rnd_ds in (128 + np.array(range(n_rds))):
+            try:
+
+                # print(rnd_np, rnd_ds)
+            
+                ## set `numpy` random seed
+                np.random.seed(rnd_np)
+                
+                if bl_cor_X is False:
+                    #### uncorrelated X
+                    arr_X = np.random.randn(K, n, p)
+                else:
+                    #### correlated X
+                    covmat_X = np.fromfunction(lambda i, j: np.power(0.7, np.abs(i - j)), (p, p))
+                    arr_X = np.random.multivariate_normal(np.zeros(p), covmat_X, K * n).reshape(K, n, p)
+
+                arr_U_eps = np.random.multivariate_normal(np.zeros(2), cormat_U_eps, K * n).T.reshape(2, n, K)
+
+                mat_U = arr_U_eps[0] * np.sqrt(psi_u)
+                mat_eps = arr_U_eps[1]
+
+                # mat_U = np.random.randn(n, K) * np.sqrt(psi_u)
+                psi_u_est = psi_u
+                psi_u_inv_est = 1.0 / psi_u_est
+
+                # mat_U = np.random.standard_t(df_t, (n, K)) * np.sqrt(psi_u)
+                # psi_u_est = np.var(mat_U)
+                # psi_u_inv_est = 1.0 / psi_u_est
+
+                # print(">> psi_u_est: ", psi_u_est.round(5))
+
+                mat_D = np.zeros((n, K))
+                mat_Z = np.zeros((n, K))
+                mat_Y = np.zeros((n, K))
+
+                mat_gam = np.random.uniform(0.5, 1.0, (2, K))       ## gam setting 7
+                
+                # print(mat_gam.round(5))
+
+                for j in range(K): 
+                    vec_prob_z = np.array(list(map(lambda X: fun_mu(X, j, mu_alpha, mu_beta, mu_ip), arr_X[j]))) 
+                    mat_Z[:, j] = np.random.binomial(n = 1, p = vec_prob_z) ## instrument variable
+
+                    pz_cur = np.mean(mat_Z[:, j])
+
+                    mat_D[:, j] = np.minimum(mat_Z[:, j], (mat_eps[:, j] < eps_d).astype(int)) 
+                    mat_D[:, j] = np.maximum(
+                        mat_D[:, j], 
+                        (mat_eps[:, j] < stats.norm.ppf(pz_cur - np.mean(mat_D[:, j]))).astype(int)
+                    )
+
+                    # mat_D[:, j] = mat_Z[:, j]
+
+                    mat_Y[:, j] = mat_D[:, j] * beta \
+                        + np.array(list(map(lambda X: fun_gamma(X, j, mat_gam[:, j]), arr_X[j]))) + mat_U[:, j]
+
+                ## set `random` random seed
+                random.seed(int(rnd_ds))
+                
+                n_est = int(n / 3)
+
+                # idx_est = np.array(list(range(n_est))) ## non-random splitting
+                idx_est = np.array(list(set(random.sample(range(n), n_est)))) ## random splitting
+                idx_nui = np.array(list(set(range(n)) - set(idx_est)))
+
+                i_iter = 0
+
+                ## initial estimation of beta and estimation of nuisance parameter
+                vec_beta_est_po_local = np.zeros(K)
+                vec_beta_est_local = np.zeros(K)
+
+                list_gamma_est = [[] for _ in range(K)]
+                list_mu_est = [[] for _ in range(K)]
+
+                vec_beta_est_local = np.linspace(-4, 0, K)
+
+                beta_est_ini = np.mean(vec_beta_est_local)
+
+                ## variance estimation ================================================
+                vec_beta_var_local = np.zeros(K)
+                
+                for j in range(K): 
+                    var_beta_score2 = 0.0
+                    var_beta_j0 = 0.0
+
+                    ## estimating
+                    mat_X_est = arr_X[j][idx_est, :]
+                    vec_D_est = mat_D[idx_est, j]
+                    vec_Z_est = mat_Z[idx_est, j]
+                    vec_Y_est = mat_Y[idx_est, j]
+
+                    # model_mu = list_mu_est[j]
+                    # model_gamma = list_gamma_est[j]
+
+                    # vec_Z_diff = vec_Z_est - model_mu.predict(mat_X_est)
+                    # vec_Y_gam_diff = vec_Y_est - model_gamma.predict(mat_X_est)
+                    vec_Z_diff = vec_Z_est - np.array(list(map(lambda X: fun_mu(X, j, mu_alpha, mu_beta, mu_ip), mat_X_est)))
+                    vec_Y_gam_diff = vec_Y_est - np.array(list(map(lambda X: fun_gamma(X, j, mat_gam[:, j]), mat_X_est)))
+
+                    var_beta_score2 += np.sum(
+                        (
+                            (vec_Y_gam_diff - vec_D_est * vec_beta_est_local[j]) * vec_Z_diff
+                        ) ** 2
+                    )
+                    var_beta_j0 += np.sum(vec_D_est * vec_Z_diff)
+                    
+                    var_beta_score2 /= n_est
+                    var_beta_j0 /= n_est
+
+                    vec_beta_var_local[j] = var_beta_score2 / (var_beta_j0 ** 2) / n_est
+
+                vec_weight_iv = 1.0 / vec_beta_var_local
+                vec_weight_iv /= np.sum(vec_weight_iv)
+
+                beta_est_ivwa = np.sum(vec_weight_iv * vec_beta_est_local)
+
+                ax_weight.scatter(
+                    vec_beta_est_local,
+                    vec_weight_iv
+                )
+
+                ax_var.scatter(
+                    vec_beta_est_local,
+                    vec_beta_var_local
+                )
+
+                
+
+                if path_out is None: 
+                    print(
+                        rnd_np,
+                        rnd_ds,
+                        np.mean(mat_D).round(5), 
+                        np.corrcoef(mat_D.flatten(), mat_Z.flatten())[0, 1].round(5), " | ", 
+                        np.mean(vec_beta_est_local).round(5), " | ",
+                        beta_est_ivwa.round(5),
+                        sep=",",
+                    )
+                else:
+                    print(
+                        rnd_np,
+                        rnd_ds,
+                        np.mean(mat_D).round(5), 
+                        np.corrcoef(mat_D.flatten(), mat_Z.flatten())[0, 1].round(5),
+                        np.mean(vec_beta_est_local),
+                        beta_est_ivwa.round(5),
+                        sep=",",
+                        file=open(path_out, "a")
+                    )
+
+            except ValueError:
+                print("ValueError:  ", "rnp_", rnd_np, " rds_", rnd_ds, sep="")
+                continue
+
+    print("running time: ", time.time() - time_start, " seconds ")
+
+    path_fig_out = "output/sim3mr_ivwa_test.pdf"
+    fig.savefig(
+        path_fig_out, format = "pdf"
+    )
+    print("Saving figure to: ", path_fig_out)
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

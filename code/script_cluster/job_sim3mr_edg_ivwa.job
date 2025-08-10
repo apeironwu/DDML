@@ -1,0 +1,54 @@
+#!/bin/bash
+#SBATCH -J sim3mr_edg_ivwa
+#SBATCH -N 1 -c 5
+#SBATCH --mem=12G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1-4
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+# default value
+vgam=7
+
+## set variable parameters
+d_candi=(1 2 1 2)
+eps_candi=(0.75 0.5 1.4 1.25)
+
+idx=$((SLURM_ARRAY_TASK_ID - 1))
+
+d_curr=${d_candi[idx]}
+eps_curr=${eps_candi[idx]}
+
+
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with d_curr = $d_curr and eps_curr = $eps_curr
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim3mr_edg_vgam_ivwa.py \
+    --n_rnp=2000 \
+    --n_rds=5 \
+    --n_rft=100 \
+    --n=300 \
+    --p=5 \
+    --den_est="double" \
+    --K=10 \
+    --vgam=${vgam} \
+    --mu_ip=${d_curr} \
+    --eps_d=${eps_curr} \
+    --path_out="output/out_sim3mr_edg_ivwa_vgams${vgam}_ip${d_curr}_eps${eps_curr//./}.csv"

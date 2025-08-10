@@ -1,0 +1,49 @@
+#!/bin/bash
+#SBATCH -J sim2s_n200_rnp500_rds10
+#SBATCH -N 1 -c 5
+#SBATCH --mem=32G
+#SBATCH -o record/slurm_%j_%x_log.out
+#SBATCH -e record/slurm_%j_%x_err.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=z.h.wu@link.cuhk.edu.hk
+#SBATCH --array=1-4
+
+# basic information
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME 
+
+# activate conda environment
+source ~/.bashrc
+conda activate py_ddml
+
+# set working directory
+cd /project/Stat/s1155168529/programs/DDML
+
+# default value
+# n=100
+n_rft=200
+n_rnp=1000
+p=10
+
+## set variable parameters
+K_candi=(5 5 10 10)
+n_candi=(100 200 100 200)
+
+idx=$((SLURM_ARRAY_TASK_ID - 1))
+K=${K_candi[idx]}
+n=${n_candi[idx]}
+
+# print info
+echo ======================================
+echo Time is `date`
+echo Job name: $SLURM_JOB_NAME with K = $K and n = $n
+echo Running on the node: $SLURM_JOB_NODELIST
+
+# main part
+srun python code/simulation/sim2s_args.py \
+    --K $K \
+    --n $n \
+    --p $p \
+    --n_rft $n_rft \
+    --n_rnp $n_rnp \
+    --path_out output/out_sim2s_K${K}_p${p}_n${n}_rnp${n_rnp}_rds10_rft${n_rft}.csv 
