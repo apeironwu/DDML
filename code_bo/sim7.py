@@ -13,7 +13,7 @@ def main(argv):
 
     ## set default parameters
     K_fold = 3
-    n = 1000; p = 5; S = 5; n_rnd = 2000; ver = 0; path_out = None
+    n = 1000; p = 5; S = 5; n_rnd = 1000; ver = 0; path_out = None
 
     beta = -2.0
     learning_rate = 0.01
@@ -98,12 +98,12 @@ def main(argv):
         vec_weight_var = 1.0 / vec_beta_var_loc 
         vec_weight_var /= np.sum(vec_weight_var)
 
-        print(
-            ">> beta_loc:  ", 
-            vec_beta_loc.round(3), 
-            np.mean(vec_beta_loc).round(3), 
-            np.sum(vec_beta_loc * vec_weight_var).round(3)
-        )
+        # print(
+        #     ">> beta_loc:  ", 
+        #     vec_beta_loc.round(3), 
+        #     np.mean(vec_beta_loc).round(3), 
+        #     np.sum(vec_beta_loc * vec_weight_var).round(3)
+        # )
 
         vec_beta_fdml = vec_beta_loc.copy() 
 
@@ -131,28 +131,28 @@ def main(argv):
                 vec_beta_fdml[s] = model_fdml_cur.beta.detach().numpy()
 
             if r == 0:
-                vec_beta_m1 = vec_beta_fdml[0]
+                beta_m1s = vec_beta_fdml[0]
 
             vec_beta_iter[r] = np.mean(vec_beta_fdml)
 
-            print(">> >> beta_fdml_", r, ": ", vec_beta_fdml.round(3), np.mean(vec_beta_fdml).round(3))
+            # print(">> >> beta_fdml_", r, ": ", vec_beta_fdml.round(3), np.mean(vec_beta_fdml).round(3))
 
         if path_out is None:
             print(
                 seed_np,
                 np.mean(vec_beta_loc).round(3),
                 np.sum(vec_beta_loc * vec_weight_var).round(3),
-                vec_beta_m1.round(3),
-                vec_beta_iter.round(3),
+                beta_m1s.round(3),
+                ",".join(str(beta_est.round(3)) for beta_est in vec_beta_iter.round(3)),
                 sep = ",",
             )
         else: 
             print(
                 seed_np,
-                np.mean(vec_beta_loc).round(3),
-                np.sum(vec_beta_loc * vec_weight_var).round(3),
-                vec_beta_m1.round(3),
-                vec_beta_iter.round(3),
+                np.mean(vec_beta_loc).round(5),
+                np.sum(vec_beta_loc * vec_weight_var).round(5),
+                beta_m1s.round(5),
+                ",".join(str(beta_est.round(5)) for beta_est in vec_beta_iter.round(5)),
                 sep = ",",
                 file = open(path_out, "a")
             )
