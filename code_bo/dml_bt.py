@@ -31,7 +31,7 @@ def fun_logit_inflat(x, eps = 1e-2, inflat = 1.0):
 class DataSite(torch.utils.data.Dataset):
     def __init__(self, vec_y, vec_d, mat_x, K_fold):
         self.vec_y = np.array(vec_y, dtype=np.int8)     ## input outcome (binary, int)
-        self.vec_d = np.array(vec_d, dtype=np.float32)  ## input treatment
+        self.vec_d = np.array(vec_d, dtype=np.int8)  ## input treatment
         self.mat_x = np.array(mat_x, dtype=np.float32)  ## input confounders
 
         ## data splitting
@@ -76,7 +76,7 @@ class DataSite(torch.utils.data.Dataset):
             vec_y_cur, vec_d_cur, mat_x_cur = self.get_fold_train(k)
             mask_cur = vec_y_cur == 0
 
-            model_m_cur = RandomForestRegressor(n_estimators=100)
+            model_m_cur = RandomForestClassifier(n_estimators=100)
             model_m_cur.fit(mat_x_cur[mask_cur, :], vec_d_cur[mask_cur])
 
             self.ls_model_m[k] = model_m_cur
@@ -86,7 +86,7 @@ class DataSite(torch.utils.data.Dataset):
             _, _, mat_x_cur = self.get_fold_test(k)
             mask_cur = self.lab_ds == k
 
-            self.vec_m_est[mask_cur] = self.ls_model_m[k].predict(mat_x_cur)
+            self.vec_m_est[mask_cur] = self.ls_model_m[k].predict_proba(mat_x_cur)[:, 1]
 
     def get_fold2_train_nn(self, fold1, fold2): 
         mask = (self.lab_ds != fold1) & (self.lab_dds[:, fold1] != fold2)
@@ -105,7 +105,7 @@ class DataSite(torch.utils.data.Dataset):
             for j in range(self.K_fold):
                 vec_y_nn, vec_d_nn, mat_x_nn = self.get_fold2_train_nn(k, j)
 
-                model_a_curr  = RandomForestRegressor(n_estimators=100)
+                model_a_curr  = RandomForestClassifier(n_estimators=100)
                 model_a_curr.fit(mat_x_nn, vec_d_nn)
 
                 model_M_curr = RandomForestClassifier(n_estimators=100)
@@ -121,7 +121,7 @@ class DataSite(torch.utils.data.Dataset):
                 self.mat_w[mask_np, k] = model_M_curr.predict_proba(
                     np.column_stack((vec_d_np, mat_x_np))
                 )[:, 1]
-                self.mat_a_est[mask_np, k] = model_a_curr.predict(mat_x_np)
+                self.mat_a_est[mask_np, k] = model_a_curr.predict_proba(mat_x_np)[:, 1]
 
             _, vec_d_train, mat_x_train = self.get_fold_train(k)
             # self.mat_w[:, k] = fun_logit(self.mat_w[:, k])
@@ -155,8 +155,7 @@ class DataSite(torch.utils.data.Dataset):
 
             for j in range(self.K_fold):
                 idx = self.get_idx_dds(k, j)
-                mat_a_est[:, j] = self.ls_model_a[idx].predict(mat_x_cur)
-            
+                mat_a_est[:, j] = self.ls_model_a[idx].predict_proba(mat_x_cur)[:, 1]
             self.vec_gam_est[mask_cur] = self.ls_model_t[k].predict(mat_x_cur)
             self.vec_gam_est[mask_cur] -= self.vec_beta_check[k] * mat_a_est.mean(axis=1)
         
@@ -170,7 +169,7 @@ class ModelLogisticDML(torch.nn.Module):
         self.vec_gam_est = torch.tensor(vec_gam_est, dtype=torch.float32)  ## input confounders
         self.vec_m_est = torch.tensor(vec_m_est, dtype=torch.float32)      ## input confounders
 
-        self.beta = torch.nn.Parameter(torch.tensor(0.0))
+        self.beta = torch.nn.Parameter(torch.tensor(-0.0))
     
     def score(self): 
         score = 0.0
@@ -212,17 +211,17 @@ class ModelLogisticDML(torch.nn.Module):
         return Eh2 / I02 / self.vec_y.__len__()
         # return Eh2, I02 
 
-def train_logistic_dml(data, learning_rate):
+def train_logistic_dml(data, learning_rate, eps=1e-6, bl_log = False):
     model = ModelLogisticDML(
         data.vec_y, data.vec_d, data.vec_gam_est, data.vec_m_est
     ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    eps = 1e-6
+    # eps = 1e-6
     bl_conv = False
 
-    for epoch in range(10000):  # number of epochs
+    for epoch in range(1000):  # number of epochs
 
         optimizer.zero_grad()
         score2 = model.score2()
@@ -231,8 +230,12 @@ def train_logistic_dml(data, learning_rate):
 
         if score2 < eps:
             bl_conv = True
-            # print(">> Converged at epoch {}".format(epoch))
+            if bl_log: 
+                print(">> Converged at epoch {}".format(epoch))
             break
+
+        if bl_log & (epoch % (1000 / 10) == 0): 
+            print(">> r - {}, score2: {}".format(epoch, score2.item()))
 
     return model, optimizer, bl_conv
 
@@ -245,7 +248,6 @@ class OperaSiteCen(torch.utils.data.Dataset):
 
         self.mat_m_est = np.zeros((ls_site[idx_cen].__len__(), self.S))
         self.mat_gam_est = np.zeros((ls_site[idx_cen].__len__(), self.S))
-        self.mat_den_est = np.ones((ls_site[idx_cen].__len__(), self.S))
 
         self.operate_cen(ls_site)
 
@@ -258,12 +260,12 @@ class OperaSiteCen(torch.utils.data.Dataset):
             mask_cur = site_cen.lab_ds == k
 
             for s in range(self.S):
-                self.mat_m_est[mask_cur, s] = ls_site[s].ls_model_m[k].predict(mat_x_cur)
+                self.mat_m_est[mask_cur, s] = ls_site[s].ls_model_m[k].predict_proba(mat_x_cur)[:, 1]
 
                 mat_a_cur = np.zeros((mat_x_cur.shape[0], site_cen.K_fold), dtype=np.float32)
                 for j in range(site_cen.K_fold): 
                     idx = ls_site[s].get_idx_dds(k, j)
-                    mat_a_cur[:, j] = ls_site[s].ls_model_a[idx].predict(mat_x_cur)
+                    mat_a_cur[:, j] = ls_site[s].ls_model_a[idx].predict_proba(mat_x_cur)[:, 1]
                 
                 self.mat_gam_est[mask_cur, s] = ls_site[s].ls_model_t[k].predict(mat_x_cur)
                 self.mat_gam_est[mask_cur, s] -= ls_site[s].vec_beta_check[k] * mat_a_cur.mean(axis=1)
@@ -277,14 +279,27 @@ class ModelLogisticFDML(torch.nn.Module):
         self.vec_d = torch.tensor(site_cen.vec_d, dtype=torch.float32)
         self.mat_x = torch.tensor(site_cen.mat_x, dtype=torch.float32)
 
+        self.idx_cen = torch.tensor(op_site_cen.idx_cen)
         self.mat_m_est = torch.tensor(op_site_cen.mat_m_est, dtype=torch.float32)
         self.mat_gam_est = torch.tensor(op_site_cen.mat_gam_est, dtype=torch.float32)
-        self.mat_den_est = torch.tensor(op_site_cen.mat_den_est, dtype=torch.float32)
-
+        self.mat_den_est = torch.ones_like(self.mat_gam_est, dtype=torch.float32)
+        
         self.beta_ini = torch.tensor(beta_ini, dtype=torch.float32)
         self.score_loc = torch.tensor(score_loc, dtype=torch.float32)
 
         self.beta = torch.nn.Parameter(torch.tensor(beta_ini))
+    
+    def den_est(self):
+        self.mat_den_est = self.beta_ini * self.vec_d[:, None] + self.mat_gam_est
+        self.mat_den_est = 1.0 / (1.0 + torch.exp(-self.mat_den_est))
+        self.mat_den_est = 1.0 - self.mat_den_est + self.vec_y[:, None] * (2.0 * self.mat_den_est - 1.0)
+
+        # print(self.mat_den_est[:5, :])
+
+        self.mat_den_est = self.mat_den_est / self.mat_den_est[:, self.idx_cen][:, None]
+        # print(self.mat_den_est[:5, :])
+        # exit(">> test")
+
     
     ## surrogate score
     def score(self): 
@@ -306,15 +321,19 @@ class ModelLogisticFDML(torch.nn.Module):
     def score2(self):
         return self.score() ** 2
 
-def train_logistic_fdml(site_cen, op_site_cen, score_loc, beta_ini, learning_rate):
+def train_logistic_fdml(
+    site_cen, op_site_cen, 
+    score_loc, beta_ini, 
+    learning_rate, eps = 1e-6, bl_conv_step = False
+):
 
     model = ModelLogisticFDML(
         site_cen, op_site_cen, score_loc, beta_ini
     ).to(device)
+    model.den_est()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    eps = 1e-6
     bl_conv = False
 
     for epoch in range(2000):  # number of epochs
@@ -326,15 +345,16 @@ def train_logistic_fdml(site_cen, op_site_cen, score_loc, beta_ini, learning_rat
 
         if score2 < eps:
             bl_conv = True
-            # print(">> Converged at epoch {}".format(epoch))
+            if bl_conv_step:
+                print(">> Converged at epoch {}".format(epoch))
             break
 
         # if epoch % 100 == 0:
-        #     print(
-        #         ">> Epoch {} - beta {} - score2 {}".format(
-        #             epoch, model.beta.detach().numpy().round(4), score2.detach().numpy().round(4)
-        #         )
+        # print(
+        #     ">> Epoch {} - beta {} - score2 {}".format(
+        #         epoch, model.beta.detach().numpy().round(4), score2.detach().numpy().round(4)
         #     )
+        # )
 
     return model, optimizer, bl_conv
 

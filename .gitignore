@@ -172,3 +172,8 @@ output/*.pdf
 output/*.png
 
 External/
+.Rproj.user
+
+.RData
+.Rhistory
+*.Rproj
